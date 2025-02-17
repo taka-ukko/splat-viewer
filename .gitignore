@@ -1,0 +1,9 @@
+# Ignore build directory
+build/
+
+# Ignore external libraries and headers
+include/glad/
+
+# Ignore User Presets
+CMakeUserPresets.json
+
