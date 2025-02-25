@@ -20,7 +20,7 @@ public:
     std::vector<float> scale;
     std::vector<float> color;
     std::vector<float> rot;
-    std::vector<glm::mat3> covariance;
+    std::vector<glm::mat4> covAndPos;
     uint32_t numPoints = 0;
 
     bool printToConsole;
@@ -159,7 +159,8 @@ private:
                 if (printToConsole) std::cout << "Point colors loaded succcesfully" << std::endl;
             }
 
-            if (printToConsole) std::cout << "Ply file loaded succcesfully\n" << std::endl;
+            // if (printToConsole) std::cout << "Ply file loaded succcesfully\n" << std::endl;
+            std::cout << "Ply file loaded succcesfully\n" << std::endl;
             return true;
 
             // TODO include higher SH bands
@@ -223,23 +224,23 @@ private:
     void computeCovariance() {
         
         // one covariance matrix per point
-        covariance.resize(numPoints);
+        covAndPos.resize(numPoints);
 
         for (int i = 0; i < numPoints; i++) {
 
-            float& scale_x = scale.at(i);
-            float& scale_y = scale.at(i + 1);
-            float& scale_z = scale.at(i + 2);
+            float& scale_x = scale.at(3*i);
+            float& scale_y = scale.at(3*i + 1);
+            float& scale_z = scale.at(3*i + 2);
             
             glm::mat3 S = glm::mat3(0.0f);
             S[0][0] = scale_x;
             S[1][1] = scale_y;
             S[2][2] = scale_z;
             
-            float& rot_r = rot.at(i);
-            float& rot_i = rot.at(i + 1);
-            float& rot_j = rot.at(i + 2);
-            float& rot_k = rot.at(i + 3);
+            float& rot_r = rot.at(4*i);
+            float& rot_i = rot.at(4*i + 1);
+            float& rot_j = rot.at(4*i + 2);
+            float& rot_k = rot.at(4*i + 3);
 
             float rot_ri = rot_r * rot_i;
             float rot_rj = rot_r * rot_j;
@@ -264,7 +265,15 @@ private:
             R[2][1] = 2.0f * (rot_jk + rot_ri);
             R[2][2] = 1.0f - 2.0f * (rot_ii + rot_jj);
             
-            covariance[i] = R * S * S * glm::transpose(R);
+            glm::mat4 cov = glm::mat4(R * S * S * glm::transpose(R));
+
+            cov[3] = glm::vec4(
+                position.at(3*i), 
+                position.at(3*i + 1), 
+                position.at(3*i + 2), 
+                0.0f);
+
+            covAndPos[i] = cov;
         }
 
     }

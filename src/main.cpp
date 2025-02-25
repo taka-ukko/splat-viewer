@@ -35,7 +35,7 @@ const unsigned int SCR_WIDTH = 1300;
 const unsigned int SCR_HEIGHT = 1000;
 
 // camera
-Camera camera(glm::vec3(0.f, 3.f, 6.f));
+Camera camera(glm::vec3(0.f, 0.f, 6.f));
 
 //window
 bool cursorIsVisible = false;
@@ -127,11 +127,13 @@ int main()
     std::filesystem::path fCubeShaderPath = "resources/shaders/cube.fs";
     Shader cubeShader(vCubeShaderPath.c_str(), fCubeShaderPath.c_str());
 
+    std::filesystem::path covShaderPath = "resources/shaders/splat_covariances.cs";
+    Shader covShader(covShaderPath.c_str());
 
     // Loads splats, transforms values to be physically meaningful and builds the covariance matrices for each splat
     // -----------
     std::string plyFile = "resources/models/ramp_clean_baseSH.ply";
-    std::unique_ptr<SplatModel> splatModel = std::make_unique<SplatModel>(SplatModel(plyFile, true));
+    std::unique_ptr<SplatModel> splatModel = std::make_unique<SplatModel>(SplatModel(plyFile, false));
 
 
     // Setup Dear ImGui context
@@ -145,6 +147,30 @@ int main()
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(window, true); 
     ImGui_ImplOpenGL3_Init();
+
+    // SSBOs
+
+    unsigned int inputCovSSBO;
+    glGenBuffers(1, &inputCovSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, inputCovSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, splatModel->covAndPos.size() * sizeof(glm::mat4), splatModel->covAndPos.data(), GL_STATIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, inputCovSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    // Data chunck for outputting data
+    struct OutputData {
+        glm::mat2 covariance;
+        glm::vec4 position;
+    };
+
+    unsigned outputCovSSBO;
+    glGenBuffers(1, &outputCovSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, outputCovSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, splatModel->covAndPos.size() * sizeof(OutputData), nullptr, GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, outputCovSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+
 
     // Test cube
     float vertices[] = {
@@ -280,6 +306,36 @@ int main()
         // -----
         processInput(window);
 
+        // model matrix
+        glm::mat4 model = glm::mat4(1.0f);
+        // camera/view transformation
+        glm::mat4 view = camera.GetViewMatrix();
+        // projection matrix 
+        glm::mat4 projection = glm::perspective(glm::radians(camera.Fov), (float)curScreenWidth / (float)curScreenHeight, camera.Near, camera.Far);
+
+        glm::mat4 mvp = projection * view * model; 
+
+        // activate the shader and bind the SSBOs to binding points
+        covShader.use();
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, inputCovSSBO);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, outputCovSSBO);
+        
+        // set frame specific uniforms
+        covShader.setMat3("viewRot", glm::mat3(view));
+        covShader.setFloat("near", camera.Near);
+        covShader.setMat4("mvp", mvp);
+        
+        // start computations
+        glDispatchCompute(splatModel->covAndPos.size(), 1, 1);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        
+        // read the data from GPU
+        std::vector<OutputData> outputData(splatModel->covAndPos.size());
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, outputCovSSBO);
+        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, splatModel->covAndPos.size() * sizeof(OutputData), outputData.data());
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        
+
         // render
         // ------
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
@@ -287,14 +343,12 @@ int main()
 
         cubeShader.use();
 
-        // pass projection matrix to shader (note that in this case it could change every frame)
-        glm::mat4 projection = glm::perspective(glm::radians(camera.Fov), (float)curScreenWidth / (float)curScreenHeight, 0.1f, 100.0f);
-        // camera/view transformation
-        glm::mat4 view = camera.GetViewMatrix();
+        
 
-        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::mat4(1.0f);
 
-        glm::mat4 mvp = projection * view * model; 
+        mvp = projection * view * model; 
+
         cubeShader.setMat4("mvp", mvp);
         
         glBindVertexArray(cubeVBO);
@@ -337,8 +391,7 @@ void processInput(GLFWwindow *window)
     // quit
     if (
         glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS ||
-        glfwGetKey(window, GLFW_KEY_F8) == GLFW_PRESS ||
-        glfwGetKey(window, GLFW_KEY_F12) == GLFW_PRESS
+        glfwGetKey(window, GLFW_KEY_F8) == GLFW_PRESS
         ) {
         glfwSetWindowShouldClose(window, true);
     }
