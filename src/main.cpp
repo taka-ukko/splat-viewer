@@ -351,7 +351,7 @@ int main()
 
         cubeShader.setMat4("mvp", mvp);
         
-        glBindVertexArray(cubeVBO);
+        glBindVertexArray(cubeVAO);
         glDrawArrays(GL_TRIANGLES, 0, 36);
 
         // quadShader.use();
