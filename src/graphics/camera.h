@@ -21,7 +21,7 @@ const float SPEED       =  2.5f;
 const float SENSITIVITY =  0.1f;
 const float FOV         =  45.0f;
 const float NEAR        =  0.1f;
-const float FAR         =  100.0f;
+const float FAR         =  40.0f;
 
 
 
@@ -134,11 +134,13 @@ public:
     // processes input received from a mouse scroll-wheel event. Only requires input on the vertical wheel-axis
     void ProcessMouseScroll(float yoffset)
     {
-        Fov -= (float)yoffset;
-        if (Fov < 1.0f)
-            Fov = 1.0f;
-        if (Fov > 45.0f)
-            Fov = 45.0f;
+        // Fov -= (float)yoffset;
+        // if (Fov < 1.0f)
+        //     Fov = 1.0f;
+        // if (Fov > 45.0f)
+        //     Fov = 45.0f;
+
+        //investigate why segmentation fault
     }
 
 private:

@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <vector>
 #include <string>
+#include <bitset>
 
 // prototypes
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
@@ -35,7 +36,7 @@ const unsigned int SCR_WIDTH = 1300;
 const unsigned int SCR_HEIGHT = 1000;
 
 // camera
-Camera camera(glm::vec3(0.f, 0.f, 6.f));
+Camera camera(glm::vec3(0.f, 0.f, 1.f));
 
 //window
 bool cursorIsVisible = false;
@@ -132,7 +133,8 @@ int main()
 
     // Loads splats, transforms values to be physically meaningful and builds the covariance matrices for each splat
     // -----------
-    std::string plyFile = "resources/models/ramp_clean_baseSH.ply";
+    // std::string plyFile = "resources/models/ramp_clean_baseSH.ply";
+    std::string plyFile = "resources/models/clock_1band.ply";
     std::unique_ptr<SplatModel> splatModel = std::make_unique<SplatModel>(SplatModel(plyFile, false));
 
 
@@ -161,6 +163,10 @@ int main()
     struct OutputData {
         glm::mat2 covariance;
         glm::vec4 position;
+        glm::vec4 clipPos;
+        glm::ivec2 topCorner;
+        glm::ivec2 botCorner;
+        glm::vec4 axisLength;
     };
 
     unsigned outputCovSSBO;
@@ -262,7 +268,7 @@ int main()
     glBindVertexArray(0);
 
     // focus cursor
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    // glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     // render loop
     // -----------
@@ -321,7 +327,7 @@ int main()
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, outputCovSSBO);
         
         // set frame specific uniforms
-        covShader.setMat3("viewRot", glm::mat3(view));
+        covShader.setMat4("view", view);
         covShader.setFloat("near", camera.Near);
         covShader.setMat4("mvp", mvp);
         
@@ -334,9 +340,77 @@ int main()
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, outputCovSSBO);
         glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, splatModel->covAndPos.size() * sizeof(OutputData), outputData.data());
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+        std::vector<std::tuple<uint32_t, int>> keyAndIndex;
+
+        // std::cout << std::bitset<16>(0) << std::bitset<16>(0xFFFFFFFF) << std::endl;
         
 
-        // render
+        for (int k = 0; k < outputData.size(); k++) {
+            const OutputData& data = outputData[k];
+            if (data.topCorner.x != -1) {
+                for (int i = data.botCorner.x; i <= data.topCorner.x; i++) {
+                    for (int j = data.botCorner.y; j <= data.topCorner.y; j++) {
+                        uint32_t index = static_cast<uint32_t>(i * 50 + j); // hardcoded blocks
+                        
+                        // map to maximum uint range knowing that depth is [0,1]
+                        uint16_t uintDepth = static_cast<uint16_t>(data.position.z * 0xFFFF);
+
+                        uint32_t key = index << 16;
+                        key = key | static_cast<uint32_t>(uintDepth);
+                        keyAndIndex.push_back(std::tuple<uint32_t, int>(key, k));
+                        // std::cout << std::bitset<32>(key) << std::endl;
+
+                    }
+                }
+            }
+        }
+        
+
+        // check if any gaussians are visible to the camera
+        if (keyAndIndex.size() != 0) {
+            
+            
+            std::sort(keyAndIndex.begin(), keyAndIndex.end(), 
+            [](std::tuple<uint32_t, int> const &a, std::tuple<uint32_t, int> const &b){
+                return std::get<0>(a) < std::get<0>(b);
+                }
+            );
+
+            std::vector<int> ranges(50 * 50 + 1, 0);
+            
+            
+            uint16_t prevTileIdx = std::get<0>(keyAndIndex[0]) >> 16;
+            for (int i = 0; i < keyAndIndex.size(); i++) {
+                uint16_t curTileIdx = std::get<0>(keyAndIndex[i]) >> 16;
+                if (prevTileIdx != curTileIdx) {
+                    for (int j = prevTileIdx + 1; j <= curTileIdx; j++) {
+                        ranges[j] = i;
+                    }
+                    prevTileIdx = curTileIdx;
+                }
+            }
+            
+            for (int j = prevTileIdx + 1; j < ranges.size(); j++) {
+                ranges[j] = keyAndIndex.size();
+            }
+            
+            // load ranges to GPU --> reserve SSBO
+            // load sorted indices to GPU
+            // the gaussians themselves are already in the GPU
+            
+            
+            
+            // for (const auto &elem : keyAndIndex) {
+            //     const auto &key = std::get<0>(elem);
+            //     uint16_t tileIdx = key >> 16;
+            //     // std::cout << std::bitset<32>(key) << std::endl;
+            //     std::cout << std::bitset<16>(key >> 16) << " " << std::bitset<16>(key) << std::endl;
+            // }
+            
+        }
+            
+            // render
         // ------
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
