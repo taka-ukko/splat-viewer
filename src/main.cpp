@@ -131,6 +131,9 @@ int main()
     std::filesystem::path covShaderPath = "resources/shaders/splat_covariances.cs";
     Shader covShader(covShaderPath.c_str());
 
+    std::filesystem::path processPixelsShaderPath = "resources/shaders/process_pixels.cs";
+    Shader processPixelsShader(processPixelsShaderPath.c_str());
+
     // Loads splats, transforms values to be physically meaningful and builds the covariance matrices for each splat
     // -----------
     // std::string plyFile = "resources/models/ramp_clean_baseSH.ply";
@@ -169,11 +172,26 @@ int main()
         glm::vec4 axisLength;
     };
 
-    unsigned outputCovSSBO;
+    unsigned int outputCovSSBO;
     glGenBuffers(1, &outputCovSSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, outputCovSSBO);
     glBufferData(GL_SHADER_STORAGE_BUFFER, splatModel->covAndPos.size() * sizeof(OutputData), nullptr, GL_DYNAMIC_DRAW);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, outputCovSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    unsigned int rangeSSBO;
+    glGenBuffers(1, &rangeSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, rangeSSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, splatModel->covAndPos.size() * sizeof(uint32_t), nullptr, GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, rangeSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    unsigned int gIndicesSSBO;
+    glGenBuffers(1, &gIndicesSSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, gIndicesSSBO);
+    // upperlimit estimate == 5, should be dynamically updated if exceeded 
+    glBufferData(GL_SHADER_STORAGE_BUFFER, splatModel->covAndPos.size() * 5 * sizeof(uint32_t), nullptr, GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gIndicesSSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
     // pointcloud
@@ -293,12 +311,12 @@ int main()
         glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, splatModel->covAndPos.size() * sizeof(OutputData), outputData.data());
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-        std::vector<std::tuple<uint32_t, int>> keyAndIndex;
+        std::vector<std::tuple<uint32_t, uint32_t>> keyAndIndex;
 
         // std::cout << std::bitset<16>(0) << std::bitset<16>(0xFFFFFFFF) << std::endl;
         
 
-        for (int k = 0; k < outputData.size(); k++) {
+        for (uint32_t k = 0; k < outputData.size(); k++) {
             const OutputData& data = outputData[k];
             if (data.topCorner.x != -1) {
                 for (int i = data.botCorner.x; i <= data.topCorner.x; i++) {
@@ -310,7 +328,7 @@ int main()
 
                         uint32_t key = index << 16;
                         key = key | static_cast<uint32_t>(uintDepth);
-                        keyAndIndex.push_back(std::tuple<uint32_t, int>(key, k));
+                        keyAndIndex.push_back(std::tuple<uint32_t, uint32_t>(key, k));
                         // std::cout << std::bitset<32>(key) << std::endl;
 
                     }
@@ -329,37 +347,45 @@ int main()
                 }
             );
 
-            std::vector<int> ranges(50 * 50 + 1, 0);
+            std::vector<uint32_t> ranges(50 * 50 + 1, 0);
             
-            
+            std::vector<uint32_t> sortedIndices;
+
             uint16_t prevTileIdx = std::get<0>(keyAndIndex[0]) >> 16;
-            for (int i = 0; i < keyAndIndex.size(); i++) {
+            for (uint32_t i = 0; i < keyAndIndex.size(); i++) {
                 uint16_t curTileIdx = std::get<0>(keyAndIndex[i]) >> 16;
+                uint32_t gaussianIndex = std::get<1>(keyAndIndex[i]);
                 if (prevTileIdx != curTileIdx) {
-                    for (int j = prevTileIdx + 1; j <= curTileIdx; j++) {
+                    for (uint16_t j = prevTileIdx + 1; j <= curTileIdx; j++) {
                         ranges[j] = i;
                     }
                     prevTileIdx = curTileIdx;
                 }
+                sortedIndices.push_back(gaussianIndex);
             }
             
-            for (int j = prevTileIdx + 1; j < ranges.size(); j++) {
+            for (uint16_t j = prevTileIdx + 1; j < ranges.size(); j++) {
                 ranges[j] = keyAndIndex.size();
             }
             
             // load ranges to GPU --> reserve SSBO
-            // load sorted indices to GPU
+            // load sorted indices to GPU -->
             // the gaussians themselves are already in the GPU
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, rangeSSBO);
+            glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, ranges.size() * sizeof(uint32_t), ranges.data());
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, gIndicesSSBO);
+            glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sortedIndices.size() * sizeof(uint32_t), sortedIndices.data());
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+            processPixelsShader.use();
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, outputCovSSBO);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, rangeSSBO);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gIndicesSSBO);
             
-            
-            
-            // for (const auto &elem : keyAndIndex) {
-            //     const auto &key = std::get<0>(elem);
-            //     uint16_t tileIdx = key >> 16;
-            //     // std::cout << std::bitset<32>(key) << std::endl;
-            //     std::cout << std::bitset<16>(key >> 16) << " " << std::bitset<16>(key) << std::endl;
-            // }
-            
+
+            // start computations
+            glDispatchCompute(50, 50, 1);
+            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         }
             
             // render
