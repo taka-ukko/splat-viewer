@@ -52,9 +52,15 @@ void main() {
     // transform to clipspace
     vec4 clipPos = mvp * vec4(worldPos, 1.0);
 
+    //degub
+    outputData[index].clipPos = clipPos;
+
     // frustum culling (but only for z)
     if (abs(clipPos.z) > clipPos.w) {
+        // debug
         outputData[index].position = vec4(0.0); 
+        // needed for checking if a point is valid
+        outputData[index].topCorner = ivec2(-1); 
         return;
     }
 
@@ -87,7 +93,7 @@ void main() {
     ivec2 botCornerBlock = ivec2((botCornerPos * 400 + 400) / 16);
 
     // debugging values
-    outputData[index].clipPos = clipPos;
+
     outputData[index].axisLength = vec4(axisLength);
 
     if (
