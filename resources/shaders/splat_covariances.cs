@@ -23,6 +23,10 @@ uniform mat4 view; // optimization: specify locations
 
 uniform mat4 mvp; // optimization: specify locations
 
+uniform float screenRightCoord;
+
+uniform float screenTopCoord; 
+
 void main() {
     const uint index = gl_GlobalInvocationID.x;
     mat3 cov = mat3(inputCovariance[index]);
@@ -32,13 +36,16 @@ void main() {
     vec4 viewPos = view * vec4(worldPos, 1.0);
 
     // compute J affine approximation for the projective transformation
-    float onePerPosz = 1 / viewPos.z;
+    float onePerPosz = 1.0 / viewPos.z;
     float onePerPoszSquared = onePerPosz * onePerPosz;
 
+    float onePerRight = 1.0 / screenRightCoord;
+    float onePerTop = 1.0 / screenTopCoord;
+
     mat3 J = mat3(
-        near * onePerPosz, 0,                 -near * viewPos.x * onePerPoszSquared,
-        0,                 near * onePerPosz, -near * viewPos.y * onePerPoszSquared,
-        0,                 0,                 0
+        -near * onePerRight * onePerPosz,    0,                              near * onePerRight * viewPos.x * onePerPoszSquared,
+        0,                                  -near * onePerTop * onePerPosz,  near * onePerTop * viewPos.y * onePerPoszSquared,
+        0,                                  0,                              0
     );
 
     mat3 JW = J * mat3(view);

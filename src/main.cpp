@@ -197,7 +197,7 @@ int main()
     glGenBuffers(1, &gIndicesSSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, gIndicesSSBO);
     // upperlimit estimate == 5, should be dynamically updated if exceeded 
-    glBufferData(GL_SHADER_STORAGE_BUFFER, splatModel->covAndPos.size() * 5 * sizeof(uint32_t), nullptr, GL_DYNAMIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, splatModel->covAndPos.size() * 15 * sizeof(uint32_t), nullptr, GL_DYNAMIC_DRAW);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gIndicesSSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
@@ -316,10 +316,14 @@ int main()
         glm::mat4 model = glm::mat4(1.0f);
         // camera/view transformation
         glm::mat4 view = camera.GetViewMatrix();
-        // projection matrix 
-        glm::mat4 projection = glm::perspective(glm::radians(camera.Fov), (float)curScreenWidth / (float)curScreenHeight, camera.Near, camera.Far);
+        // projection matrix
+        float aspectRatio =  (float)curScreenWidth / (float)curScreenHeight;
+        glm::mat4 projection = glm::perspective(glm::radians(camera.Fov), aspectRatio, camera.Near, camera.Far);
 
         glm::mat4 mvp = projection * view * model; 
+        
+        float right = glm::tan(camera.Fov / 2) * camera.Near;
+        float top = right * (1 / aspectRatio);
 
         // activate the shader and bind the SSBOs to binding points
         covShader.use();
@@ -330,6 +334,9 @@ int main()
         covShader.setMat4("view", view);
         covShader.setFloat("near", camera.Near);
         covShader.setMat4("mvp", mvp);
+
+        covShader.setFloat("screenRightCoord", right);
+        covShader.setFloat("screenTopCoord", top);
         
         // start computations
         glDispatchCompute(splatModel->covAndPos.size(), 1, 1);
