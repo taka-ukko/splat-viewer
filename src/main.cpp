@@ -32,11 +32,14 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
 
 // settings
-const unsigned int SCR_WIDTH = 1300;
-const unsigned int SCR_HEIGHT = 1000;
+const unsigned int SCR_WIDTH = 800;
+const unsigned int SCR_HEIGHT = 800;
+
+const unsigned int TEXTURE_WIDTH = 800;
+const unsigned int TEXTURE_HEIGHT = 800;
 
 // camera
-Camera camera(glm::vec3(0.f, 0.f, 1.f));
+Camera camera(glm::vec3(-0.5f, -0.3f, 0.7f));
 
 //window
 bool cursorIsVisible = false;
@@ -100,12 +103,14 @@ int main()
 	int max_compute_work_group_count[3];
 	int max_compute_work_group_size[3];
 	int max_compute_work_group_invocations;
+    int maxSharedMemorySize;
 
 	for (int idx = 0; idx < 3; idx++) {
 		glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, idx, &max_compute_work_group_count[idx]);
 		glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, idx, &max_compute_work_group_size[idx]);
 	}	
 	glGetIntegerv(GL_MAX_COMPUTE_WORK_GROUP_INVOCATIONS, &max_compute_work_group_invocations);
+    glGetIntegerv(GL_MAX_COMPUTE_SHARED_MEMORY_SIZE, &maxSharedMemorySize);
 
 	std::cout << "OpenGL Limitations: " << std::endl;
 	std::cout << "maximum number of work groups in X dimension " << max_compute_work_group_count[0] << std::endl;
@@ -117,6 +122,8 @@ int main()
 	std::cout << "maximum size of a work group in Z dimension " << max_compute_work_group_size[2] << std::endl;
 
 	std::cout << "Number of invocations in a single local work group that may be dispatched to a compute shader " << max_compute_work_group_invocations << std::endl; 
+
+    std::cout << "Max Shared Memory Size: " << maxSharedMemorySize << " bytes" << std::endl;
 
     // build and compile the shader program
     // ------------------------------------
@@ -193,6 +200,29 @@ int main()
     glBufferData(GL_SHADER_STORAGE_BUFFER, splatModel->covAndPos.size() * 5 * sizeof(uint32_t), nullptr, GL_DYNAMIC_DRAW);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gIndicesSSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    unsigned int colorAndOpacitySSBO;
+    glGenBuffers(1, &colorAndOpacitySSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, colorAndOpacitySSBO);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, splatModel->covAndPos.size() * sizeof(glm::vec4), splatModel->colorAndOpacity.data(), GL_STATIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, colorAndOpacitySSBO);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+
+    // create texture to write the final image
+    unsigned int texture;
+
+    glGenTextures(1, &texture);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, TEXTURE_WIDTH, TEXTURE_HEIGHT, 0, GL_RGBA, GL_FLOAT, nullptr);
+
+    // bind texture to image unit (binding point) 0
+    glBindImageTexture(0, texture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
 
     // pointcloud
 
@@ -319,9 +349,9 @@ int main()
         for (uint32_t k = 0; k < outputData.size(); k++) {
             const OutputData& data = outputData[k];
             if (data.topCorner.x != -1) {
-                for (int i = data.botCorner.x; i <= data.topCorner.x; i++) {
-                    for (int j = data.botCorner.y; j <= data.topCorner.y; j++) {
-                        uint32_t index = static_cast<uint32_t>(i * 50 + j); // hardcoded blocks
+                for (int j = data.botCorner.y; j <= data.topCorner.y; j++) {
+                    for (int i = data.botCorner.x; i <= data.topCorner.x; i++) {
+                        uint32_t index = static_cast<uint32_t>(j * 50 + i); // hardcoded blocks
                         
                         // map to maximum uint range knowing that depth is [0,1]
                         uint16_t uintDepth = static_cast<uint16_t>(data.position.z * 0xFFFF);
@@ -346,12 +376,17 @@ int main()
                 return std::get<0>(a) < std::get<0>(b);
                 }
             );
-
+            
+            // vector where index i tells the starting index of gaussian indices in sortedIndices vector
+            // and i+1 tells the ending index
             std::vector<uint32_t> ranges(50 * 50 + 1, 0);
             
+            // a vector of gaussian indices sorted firstly by tileID and secondly by z-depth  
+            // Indices in ranges tell where the indices of a specified tile start and end 
             std::vector<uint32_t> sortedIndices;
 
-            uint16_t prevTileIdx = std::get<0>(keyAndIndex[0]) >> 16;
+            
+            uint16_t prevTileIdx = std::get<0>(keyAndIndex[0]) >> 16; //
             for (uint32_t i = 0; i < keyAndIndex.size(); i++) {
                 uint16_t curTileIdx = std::get<0>(keyAndIndex[i]) >> 16;
                 uint32_t gaussianIndex = std::get<1>(keyAndIndex[i]);
@@ -381,38 +416,39 @@ int main()
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, outputCovSSBO);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, rangeSSBO);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gIndicesSSBO);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, colorAndOpacitySSBO);
             
 
             // start computations
             glDispatchCompute(50, 50, 1);
-            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT || GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+            // render image to quad
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            quadShader.use();
+            glBindVertexArray(quadVAO);
+
+            quadShader.setInt("tex", 0);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, texture);
+
+            glDrawArrays(GL_TRIANGLES, 0, 6);
         }
-            
-            // render
-        // ------
-        glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
 
-        cubeShader.use();
-
-
-
-        model = glm::mat4(1.0f);
-
-        mvp = projection * view * model; 
-
-        cubeShader.setMat4("mvp", mvp);
+        // render pointcloud on top of model
+        // ------------------------------------------------
+        // cubeShader.use();
         
-        glBindVertexArray(pcVAO);
-        glDrawArrays(GL_POINTS, 0, splatModel->position.size());
-
-        // quadShader.use();
-        // glBindVertexArray(quadVAO);
+        // model = glm::mat4(1.0f);
         
-        // quadShader.setInt("tex", 0);
-        // glActiveTexture(GL_TEXTURE0);
-
-        // glDrawArrays(GL_TRIANGLES, 0, 6);
+        // mvp = projection * view * model; 
+        
+        // cubeShader.setMat4("mvp", mvp);
+        
+        // glBindVertexArray(pcVAO);
+        // glDrawArrays(GL_POINTS, 0, splatModel->position.size());
+        
+        // ------------------------------------------------
 
         // imgui: render
         // ------------

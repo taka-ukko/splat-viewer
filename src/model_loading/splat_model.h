@@ -19,6 +19,7 @@ public:
     std::vector<float> opacity;
     std::vector<float> scale;
     std::vector<float> color;
+    std::vector<glm::vec4> colorAndOpacity;
     std::vector<float> rot;
     std::vector<glm::mat4> covAndPos;
     uint32_t numPoints = 0;
@@ -156,6 +157,11 @@ private:
                     }
                 }
                 reader.extract_properties(indices, numElements, miniply::PLYPropertyType::Float, color.data());
+
+                for (int i = 0; i < opacity.size(); i++) {
+                    colorAndOpacity.push_back(glm::vec4(color[3*i], color[3*i+1], color[3*i+2], opacity[i]));
+                }
+
                 if (printToConsole) std::cout << "Point colors loaded succcesfully" << std::endl;
             }
 
@@ -213,10 +219,13 @@ private:
         
         // TODO normalize quaternions (appears to be normalized by default but never know)
         
-        std::for_each(color.begin(), color.end(), [](float &value){
+        std::for_each(colorAndOpacity.begin(), colorAndOpacity.end(), [](glm::vec4 &vec){
             // 0.282094791773878 = 0.5 * sqrt(1/pi) = Spherical harmonic basis function Y_0^0
             // not sure why need to 0.5f
-            value = 0.5f + value * 0.282094791773878f; 
+            vec.x = 0.5f + vec.x * 0.282094791773878f; 
+            vec.y = 0.5f + vec.y * 0.282094791773878f; 
+            vec.z = 0.5f + vec.z * 0.282094791773878f;
+            vec.w = 1.0f / (1.0 + std::exp(vec.w)); // sigmoid
         });
 
     }
