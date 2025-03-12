@@ -24,10 +24,13 @@ public:
     std::vector<glm::mat4> covAndPos;
     uint32_t numPoints = 0;
 
+    bool flipY;
     bool printToConsole;
 
-    SplatModel(const std::string& plyFile, bool printToConsole = false) : 
-        printToConsole(printToConsole)
+
+    SplatModel(const std::string& plyFile, bool flipY = false, bool printToConsole = false) : 
+        printToConsole(printToConsole),
+        flipY(flipY)
     {
 
         // Load the data from the PLY file
@@ -251,6 +254,13 @@ private:
             float& rot_j = rot.at(4*i + 2);
             float& rot_k = rot.at(4*i + 3);
 
+
+            // https://stackoverflow.com/questions/32438252/efficient-way-to-apply-mirror-effect-on-quaternion-rotation
+            if (flipY) {
+                rot_i = -rot_i;
+                rot_k = -rot_k;
+            }
+
             float rot_ri = rot_r * rot_i;
             float rot_rj = rot_r * rot_j;
             float rot_rk = rot_r * rot_k;
@@ -276,11 +286,22 @@ private:
             
             glm::mat4 cov = glm::mat4(R * S * S * glm::transpose(R));
 
-            cov[3] = glm::vec4(
-                position.at(3*i), 
-                position.at(3*i + 1), 
-                position.at(3*i + 2), 
-                0.0f);
+            if (flipY) {
+                cov[3] = glm::vec4(
+                    position.at(3*i), 
+                    -position.at(3*i + 1), 
+                    position.at(3*i + 2), 
+                    0.0f);
+            }
+
+            else {
+                cov[3] = glm::vec4(
+                    position.at(3*i), 
+                    position.at(3*i + 1), 
+                    position.at(3*i + 2), 
+                    0.0f); 
+            }
+
 
             covAndPos[i] = cov;
         }

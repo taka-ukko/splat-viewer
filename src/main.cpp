@@ -39,7 +39,7 @@ const unsigned int TEXTURE_WIDTH = 800;
 const unsigned int TEXTURE_HEIGHT = 800;
 
 // camera
-Camera camera(glm::vec3(-0.5f, -0.3f, 0.7f));
+Camera camera(glm::vec3(-0.5f, 0.3f, 0.7f));
 
 //window
 bool cursorIsVisible = false;
@@ -145,7 +145,7 @@ int main()
     // -----------
     // std::string plyFile = "resources/models/ramp_clean_baseSH.ply";
     std::string plyFile = "resources/models/clock_1band.ply";
-    std::unique_ptr<SplatModel> splatModel = std::make_unique<SplatModel>(SplatModel(plyFile, false));
+    std::unique_ptr<SplatModel> splatModel = std::make_unique<SplatModel>(SplatModel(plyFile, true, false));
 
 
     // Setup Dear ImGui context
