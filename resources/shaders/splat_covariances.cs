@@ -13,7 +13,8 @@ layout(std430, binding = 1) buffer OutputBuffer {
         vec4 clipPos; // only for debugging
         ivec2 topCorner;
         ivec2 botCorner;
-        vec4 axisLength; // only for debugging
+        vec2 majorEigenVec;
+        vec2 minorEigenVec;
     } outputData[];
 };
 
@@ -86,13 +87,21 @@ void main() {
     float varxMinusVary = var_x - var_y;
 
     float greaterEig = ((var_x + var_y) + sqrt(varxMinusVary * varxMinusVary + 4*cov_xy*cov_xy)) * 0.5;
+    float lesserEig = ((var_x + var_y) - sqrt(varxMinusVary * varxMinusVary + 4*cov_xy*cov_xy)) * 0.5;
+
+    vec2 majorEigenVec = normalize(vec2(-cov_xy, var_x - greaterEig));
+    vec2 minorEigenVec = normalize(vec2(-cov_xy, var_x - lesserEig));
 
     // axis length of the 99% mass contour
-    float axisLength = 3.034798181 * sqrt(greaterEig); // but what is the scale???
+    float majorAxisLength = 3.034798181 * sqrt(greaterEig);
+    float minorAxisLength = 3.034798181 * sqrt(lesserEig);
+
+    majorEigenVec = majorEigenVec * majorAxisLength;
+    minorEigenVec = minorEigenVec * minorAxisLength;
 
     // find the bounding box corner points (in ndc) for tile overlap detection
-    vec2 topCornerPos = vec2(ndcPos.x + axisLength, ndcPos.y + axisLength); 
-    vec2 botCornerPos = vec2(ndcPos.x - axisLength, ndcPos.y - axisLength); 
+    vec2 topCornerPos = vec2(ndcPos.x + majorAxisLength, ndcPos.y + majorAxisLength); 
+    vec2 botCornerPos = vec2(ndcPos.x - majorAxisLength, ndcPos.y - majorAxisLength); 
 
 
     // find the bounding box corner tile indices
@@ -101,7 +110,9 @@ void main() {
 
     // debugging values
 
-    outputData[index].axisLength = vec4(axisLength);
+    outputData[index].majorEigenVec =  majorEigenVec;
+    outputData[index].minorEigenVec =  minorEigenVec;
+
 
     if (
         // hardcoded

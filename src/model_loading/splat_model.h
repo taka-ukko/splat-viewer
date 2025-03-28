@@ -286,22 +286,18 @@ private:
             
             glm::mat4 cov = glm::mat4(R * S * S * glm::transpose(R));
 
+
+
+
             if (flipY) {
-                cov[3] = glm::vec4(
-                    position.at(3*i), 
-                    -position.at(3*i + 1), 
-                    position.at(3*i + 2), 
-                    0.0f);
+                position.at(3*i + 1) =-position.at(3*i + 1); 
             }
 
-            else {
-                cov[3] = glm::vec4(
-                    position.at(3*i), 
-                    position.at(3*i + 1), 
-                    position.at(3*i + 2), 
-                    0.0f); 
-            }
-
+            cov[3] = glm::vec4(
+                position.at(3*i), 
+                position.at(3*i + 1), 
+                position.at(3*i + 2), 
+                0.0f);
 
             covAndPos[i] = cov;
         }

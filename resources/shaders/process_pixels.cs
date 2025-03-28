@@ -5,7 +5,7 @@
 const uint MAX_NUM_GAUSSIANS_PER_TILE = 800;
 const float SATURATION_THRESHOLD = 0.01;
 const float ALPHA_SKIP_THRESHOLD = 1.0 / 255.0;
-const vec3 BACKGROUND_COLOR = vec3(0.2);
+const vec3 BACKGROUND_COLOR = vec3(0.5);
 
 layout (local_size_x = 16, local_size_y = 16) in;
 

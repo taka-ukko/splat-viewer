@@ -131,9 +131,15 @@ int main()
     std::filesystem::path fQuadShaderPath = "resources/shaders/quad.fs";
     Shader quadShader(vQuadShaderPath.c_str(), fQuadShaderPath.c_str());
 
-    std::filesystem::path vCubeShaderPath = "resources/shaders/cube.vs";
-    std::filesystem::path fCubeShaderPath = "resources/shaders/cube.fs";
-    Shader cubeShader(vCubeShaderPath.c_str(), fCubeShaderPath.c_str());
+
+    std::filesystem::path vPointcloudShaderPath = "resources/shaders/pointcloud.vs";
+    std::filesystem::path gPointcloudShaderPath = "resources/shaders/pointcloud.gs";
+    std::filesystem::path fPointcloudShaderPath = "resources/shaders/pointcloud.fs";
+    Shader pointcloudShader(vPointcloudShaderPath.c_str(), gPointcloudShaderPath.c_str(), fPointcloudShaderPath.c_str());
+
+    std::filesystem::path gGridShaderPath = "resources/shaders/grid.gs";
+    std::filesystem::path fGridShaderPath = "resources/shaders/grid.fs";
+    Shader gridShader(vQuadShaderPath.c_str(), gGridShaderPath.c_str(), fGridShaderPath.c_str());
 
     std::filesystem::path covShaderPath = "resources/shaders/splat_covariances.cs";
     Shader covShader(covShaderPath.c_str());
@@ -145,6 +151,7 @@ int main()
     // -----------
     // std::string plyFile = "resources/models/ramp_clean_baseSH.ply";
     std::string plyFile = "resources/models/clock_1band.ply";
+    // std::string plyFile = "resources/models/test_1band.ply";
     std::unique_ptr<SplatModel> splatModel = std::make_unique<SplatModel>(SplatModel(plyFile, true, false));
 
 
@@ -176,7 +183,8 @@ int main()
         glm::vec4 clipPos;
         glm::ivec2 topCorner;
         glm::ivec2 botCorner;
-        glm::vec4 axisLength;
+        glm::vec2 majorEigenVec;
+        glm::vec2 minorEigenVec;
     };
 
     unsigned int outputCovSSBO;
@@ -189,7 +197,8 @@ int main()
     unsigned int rangeSSBO;
     glGenBuffers(1, &rangeSSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, rangeSSBO);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, splatModel->covAndPos.size() * sizeof(uint32_t), nullptr, GL_DYNAMIC_DRAW);
+    // TODO: hardcoded size tied to block size
+    glBufferData(GL_SHADER_STORAGE_BUFFER, (50 * 50 + 1) * sizeof(uint32_t), nullptr, GL_DYNAMIC_DRAW); 
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, rangeSSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
@@ -197,7 +206,7 @@ int main()
     glGenBuffers(1, &gIndicesSSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, gIndicesSSBO);
     // upperlimit estimate == 5, should be dynamically updated if exceeded 
-    glBufferData(GL_SHADER_STORAGE_BUFFER, splatModel->covAndPos.size() * 15 * sizeof(uint32_t), nullptr, GL_DYNAMIC_DRAW);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, splatModel->covAndPos.size() * 1000 * sizeof(uint32_t), nullptr, GL_DYNAMIC_DRAW);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, gIndicesSSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
@@ -208,6 +217,19 @@ int main()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, colorAndOpacitySSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
+    struct EigenData {
+        glm::vec2 majorEigVec;
+        glm::vec2 minorEigVec;
+    };
+
+    unsigned int eigenUBO;
+    glGenBuffers(1, &eigenUBO);
+    glBindBuffer(GL_UNIFORM_BUFFER, eigenUBO);
+    // hardcoded
+    glBufferData(GL_UNIFORM_BUFFER, 100 * sizeof(EigenData), nullptr, GL_DYNAMIC_DRAW);
+    // glBufferData(GL_UNIFORM_BUFFER, splatModel->covAndPos.size() * sizeof(EigenData), nullptr, GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_UNIFORM_BUFFER, 5, eigenUBO);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
     // create texture to write the final image
     unsigned int texture;
@@ -350,6 +372,9 @@ int main()
 
         std::vector<std::tuple<uint32_t, uint32_t>> keyAndIndex;
 
+        // for drawing eigen vectors and bounding boxes
+        std::vector<EigenData> eigenData;
+
         // std::cout << std::bitset<16>(0) << std::bitset<16>(0xFFFFFFFF) << std::endl;
         
 
@@ -371,6 +396,9 @@ int main()
                     }
                 }
             }
+
+            //for drawing eigen vectors and bounding boxes
+            eigenData.push_back(EigenData{data.majorEigenVec, data.minorEigenVec});
         }
         
 
@@ -444,18 +472,41 @@ int main()
 
         // render pointcloud on top of model
         // ------------------------------------------------
-        // cubeShader.use();
+
+        glBindBuffer(GL_UNIFORM_BUFFER, eigenUBO);
+        glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(eigenData) * eigenData.size(), eigenData.data());
+        glBindBuffer(GL_UNIFORM_BUFFER, 0);
+        
+        // ------------------------------------------------
+
+
+        // pointcloudShader.use();
+
+        // glBindBufferBase(GL_UNIFORM_BUFFER, 0, eigenUBO);
+
         
         // model = glm::mat4(1.0f);
         
         // mvp = projection * view * model; 
         
-        // cubeShader.setMat4("mvp", mvp);
+        // pointcloudShader.setMat4("mvp", mvp);
         
         // glBindVertexArray(pcVAO);
         // glDrawArrays(GL_POINTS, 0, splatModel->position.size());
         
-        // ------------------------------------------------
+        // draw grid lines------------------------------------------------
+        
+
+        // gridShader.use();
+
+        // glBindVertexArray(quadVAO);
+        // glDrawArrays(GL_POINTS, 0, 1);
+        // glBindVertexArray(0);
+
+
+
+
+
 
         // imgui: render
         // ------------
