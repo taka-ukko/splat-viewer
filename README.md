@@ -4,6 +4,19 @@ A toy project for rendering gaussian splats with OpenGL.
 
 Work in progress 🔨
 
+![Alt text](screenshots/screenshot_1.png)
+
+## TODO
+
+- Optimize for real-time viewing by
+    - Sorting the gaussians on GPU
+    - More accurate bounding boxes for gaussians
+    - Persistent CPU <--> GPU buffer mapping
+
+- Fix graphical bugs related to
+    - Insufficient memory in the pixel rendering part
+    
+
 ## Credits
 
 
